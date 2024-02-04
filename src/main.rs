@@ -3,11 +3,10 @@
 ~ add enzyme class
 *!=add!=random!=spawn!=conditions!=
 *!=add!=colision!=physics!=
-* add substrate
+*!=add!=substrate!=
 * add ability for substrate to turn into product through enzyme
 * competetive inhibitors
 * non-competetive inhibitors
-* add nature reaction and subatomic repel
 */
 
 
@@ -25,7 +24,19 @@ const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 720;
 
 const ENZYME_A_BMP_PATH: &str = "enzymeA.bmp";
-const ENZYME_RADIUS: f64 = 50.0;
+const ENZYME_B_BMP_PATH: &str = "enzymeB.bmp";
+const SUBSTRATE_A_BMP_PATH: &str = "substrateA.bmp";
+const SUBSTRATE_B_BMP_PATH: &str = "substrateB.bmp";
+const COMPLEX_A_BMP_PATH: &str = "complexA.bmp";
+const COMPLEX_B_BMP_PATH: &str = "complexB.bmp";
+const ENZYME_RADIUS: f64 = 32.0;
+const SUBSTRATE_RADIUS: f64 = 16.0;
+
+const BUTTON_WIDTH: u32 = 200;
+const BUTTON_HEIGHT: u32 = 75;
+const BUTTON_PADDING: u32 = 15;
+
+
 
 fn main() {
     // initalize sdl and canvas
@@ -40,16 +51,17 @@ fn main() {
         .expect("Failed to build canvas");
 
     let texture_creator = canvas.texture_creator();
-    let texture = texture_creator
-        .create_texture_from_surface(sdl2::surface::Surface::load_bmp("enzymeA.bmp").unwrap())
-        .expect("Failed to create texture.");
 
-    let mut enzymes = vec![Enzyme::new(EnzymeType::A, &texture_creator)];
+    let mut enzymes: Vec<Enzyme<'_>> = Vec::new();
+    let mut subsrate: Vec<Substrate<'_>> = Vec::new();
 
-    let add_enzyme_a_button = sdl2::rect::Rect::new(WIDTH as i32 - 125, 25, 100, 50);
+    let add_enzyme_a_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 1 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
+    let add_enzyme_b_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 2 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
+    let add_substrate_a_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 3 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
+    let add_substrate_b_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 4 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
 
     'game_loop: loop {
-        canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
+        canvas.set_draw_color(sdl2::pixels::Color::RGB(20, 20, 20));
         canvas.clear();
         
         for i in 0..enzymes.len() {
@@ -65,8 +77,33 @@ fn main() {
             e.entity.update();
             e.entity.display(&mut canvas);
         }
+        for i in (0..subsrate.len()).rev() {
+            subsrate[i].entity.update();
+            subsrate[i].entity.display(&mut canvas);
+            let mut to_remove: Vec<usize> = Vec::new();
+            for j in 0..enzymes.len() {
+                if !(enzymes[j].status == EnzymeStatus::Natural) ||
+                   enzymes[j].enzyme_type != subsrate[i].substrate_type {continue;}
+
+                let sq_min_distance = (subsrate[i].entity.radius + enzymes[j].entity.radius).powi(2);
+                let sq_distance = (subsrate[i].entity.position.0 - enzymes[j].entity.position.0).powi(2) + (subsrate[i].entity.position.1 - enzymes[j].entity.position.1).powi(2);
+                if sq_distance <= sq_min_distance {
+                    enzymes[j].grab_substrate(&texture_creator);
+                    to_remove.push(i);
+                    break;
+                }
+            }
+            for index in to_remove {
+                subsrate.remove(index);
+            }
+            subsrate.shrink_to_fit();
+        }
+
         canvas.set_draw_color(sdl2::pixels::Color::RGB(128, 0, 0));
         canvas.fill_rect(add_enzyme_a_button).expect("Failed to draw rectangle.");
+        canvas.fill_rect(add_enzyme_b_button).expect("Failed to draw rectangle.");
+        canvas.fill_rect(add_substrate_a_button).expect("Failed to draw rectangle.");
+        canvas.fill_rect(add_substrate_b_button).expect("Failed to draw rectangle.");
         canvas.present();
 
         let mut event_pump = context.event_pump().expect("Failed to poll events."); // poll for user input
@@ -78,10 +115,22 @@ fn main() {
                 }
                 Event::MouseButtonDown { mouse_btn, x, y, .. } => {
                     if mouse_btn == MouseButton::Left {
-                        let point = Point::new(x, y);
-                        if add_enzyme_a_button.contains_point(point) {
-                            let new_enzyme = Enzyme::new(EnzymeType::A, &texture_creator);
+                        let cursor = Point::new(x, y);
+                        if add_enzyme_a_button.contains_point(cursor) {
+                            let new_enzyme = Enzyme::new(Type::A, &texture_creator);
                             enzymes.push(new_enzyme);
+                        }
+                        else if add_enzyme_b_button.contains_point(cursor) {
+                            let new_enzyme = Enzyme::new(Type::B, &texture_creator);
+                            enzymes.push(new_enzyme);
+                        }
+                        else if add_substrate_a_button.contains_point(cursor) {
+                            let new_substrate = Substrate::new(Type::A, &texture_creator);
+                            subsrate.push(new_substrate);
+                        }
+                        else if add_substrate_b_button.contains_point(cursor) {
+                            let new_substrate = Substrate::new(Type::B, &texture_creator);
+                            subsrate.push(new_substrate);
                         }
                     }
                 }
@@ -117,12 +166,23 @@ impl<'a> Entity<'a> {
     }
     fn bounds_check(& mut self) {
         // check x bounds
-        if (self.position.0 - self.radius <= 0.0 && self.velocity.0 < 0.0) || (self.position.0 + self.radius >= WIDTH as f64 && self.velocity.0 > 0.0) {
+        if self.position.0 - self.radius <= 0.0 && self.velocity.0 < 0.0 {
             self.velocity.0 *= -1.0;
+            self.position.0 = self.radius;
         }
+        else if self.position.0 + self.radius >= WIDTH as f64 && self.velocity.0 > 0.0 {
+            self.velocity.0 *= -1.0;
+            self.position.0 = WIDTH as f64 - self.radius;
+        }
+
         // check y bounds
-        if (self.position.1 - self.radius <= 0.0) || (self.position.1 + self.radius >= HEIGHT as f64) {
+        if self.position.1 - self.radius <= 0.0 {
             self.velocity.1 *= -1.0;
+            self.position.1 = self.radius;
+        }
+        else if self.position.1 + self.radius >= HEIGHT as f64 {
+            self.velocity.1 *= -1.0;
+            self.position.1 = HEIGHT as f64 - self.radius;
         }
     }
     pub fn display(&mut self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>) {
@@ -168,26 +228,85 @@ fn collide(enzymes: &mut Vec<Enzyme>, i: usize, j: usize, r: f64) {
 
 // trait for any class with the entity field
 
-enum EnzymeType {
+#[derive(PartialEq)]
+enum Type {
     A,
+    B,
+}
+
+#[derive(PartialEq)]
+enum EnzymeStatus {
+    Natural,
+    Complex,
+    Denatured,
+    Competetive,
+    NoneCompetetive,
 }
 
 struct Enzyme<'a> {
     entity: Entity<'a>,
-    enzyme_type: EnzymeType,
+    enzyme_type: Type,
+    status: EnzymeStatus
 }
 
 impl<'a> Enzyme<'a> {
     fn new(
-        enzyme_type: EnzymeType,
+        enzyme_type: Type,
         texture_creator: &'a sdl2::render::TextureCreator<WindowContext>
     ) -> Enzyme<'a> {
+        let photo_path: &str;
+        match enzyme_type {
+            Type::A => {photo_path = ENZYME_A_BMP_PATH}
+            Type::B => {photo_path = ENZYME_B_BMP_PATH}
+        }
 
         let sprite: sdl2::render::Texture<'_> = texture_creator
-            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(ENZYME_A_BMP_PATH).unwrap())
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
             .expect("Failed to create texture.");
 
-        Enzyme { entity: Entity::spawn(sprite, ENZYME_RADIUS, 1.0), enzyme_type}
+        Enzyme { entity: Entity::spawn(sprite, ENZYME_RADIUS, 1.0), enzyme_type, status: EnzymeStatus::Natural}
 
+    }
+    fn grab_substrate(&mut self, texture_creator: &'a sdl2::render::TextureCreator<WindowContext>) {
+        self.status = EnzymeStatus::Complex;
+
+        let photo_path: &str;
+        match self.enzyme_type {
+            Type::A => {photo_path = COMPLEX_A_BMP_PATH}
+            Type::B => {photo_path = COMPLEX_B_BMP_PATH}
+        }
+
+        let sprite: sdl2::render::Texture<'_> = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+
+        self.entity.sprite = sprite;
+    }
+    fn release_product(&mut self) {
+        todo!();
+    }
+}
+
+struct Substrate<'a> {
+    entity: Entity<'a>,
+    substrate_type: Type,
+}
+
+impl<'a> Substrate<'a> {
+    fn new(
+        substrate_type: Type,
+        texture_creator: &'a sdl2::render::TextureCreator<WindowContext>
+    ) -> Substrate<'a> {
+        let photo_path: &str;
+        match substrate_type {
+            Type::A => {photo_path = SUBSTRATE_A_BMP_PATH}
+            Type::B => {photo_path = SUBSTRATE_B_BMP_PATH}
+        }
+
+        let sprite: sdl2::render::Texture<'_> = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+
+        Substrate {entity: Entity::spawn(sprite, SUBSTRATE_RADIUS, 1.0), substrate_type}
     }
 }
