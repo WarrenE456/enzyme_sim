@@ -4,9 +4,14 @@
 *!=add!=random!=spawn!=conditions!=
 *!=add!=colision!=physics!=
 *!=add!=substrate!=
-* add ability for substrate to turn into product through enzyme
+*!=add!=ability!=for!=substrate!=to!=turn!=into!=product!=through!=enzyme!=
 * competetive inhibitors
 * non-competetive inhibitors
+* add temp
+* add pH
+* make the product rate slow down as the tempurature and pH goes beyond the regular range
+    by decreasing the likely hood that enzymes will release products
+* add buffers
 */
 
 
@@ -23,12 +28,17 @@ use sdl2::video::WindowContext;
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 720;
 
-const ENZYME_A_BMP_PATH: &str = "enzymeA.bmp";
-const ENZYME_B_BMP_PATH: &str = "enzymeB.bmp";
-const SUBSTRATE_A_BMP_PATH: &str = "substrateA.bmp";
-const SUBSTRATE_B_BMP_PATH: &str = "substrateB.bmp";
-const COMPLEX_A_BMP_PATH: &str = "complexA.bmp";
-const COMPLEX_B_BMP_PATH: &str = "complexB.bmp";
+const ENZYME_A_BMP_PATH: &str = "images/A/enzymeA.bmp";
+const ENZYME_B_BMP_PATH: &str = "images/B/enzymeB.bmp";
+const SUBSTRATE_A_BMP_PATH: &str = "images/A/substrateA.bmp";
+const SUBSTRATE_B_BMP_PATH: &str = "images/B/substrateB.bmp";
+const COMPLEX_A_BMP_PATH: &str = "images/A/complexA.bmp";
+const COMPLEX_B_BMP_PATH: &str = "images/B/complexB.bmp";
+const PRODUCT_A_PATH: &str = "images/A/productA.bmp";
+const PRODUCT_B_PATH: &str = "images/B/productB.bmp";
+
+const PRODUCT_SPREAD: f64 = std::f64::consts::PI / 8.0;
+
 const ENZYME_RADIUS: f64 = 32.0;
 const SUBSTRATE_RADIUS: f64 = 16.0;
 
@@ -53,7 +63,8 @@ fn main() {
     let texture_creator = canvas.texture_creator();
 
     let mut enzymes: Vec<Enzyme<'_>> = Vec::new();
-    let mut subsrate: Vec<Substrate<'_>> = Vec::new();
+    let mut substrate: Vec<Substrate<'_>> = Vec::new();
+    let mut products: Vec<Entity<'_>> = Vec::new();
 
     let add_enzyme_a_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 1 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
     let add_enzyme_b_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 2 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
@@ -61,6 +72,9 @@ fn main() {
     let add_substrate_b_button = sdl2::rect::Rect::new(WIDTH as i32 - (BUTTON_WIDTH + BUTTON_PADDING) as i32, (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 4 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
 
     'game_loop: loop {
+        // TODO remove
+        println!("{}", products.len());
+
         canvas.set_draw_color(sdl2::pixels::Color::RGB(20, 20, 20));
         canvas.clear();
         
@@ -76,27 +90,56 @@ fn main() {
         for e in &mut enzymes {
             e.entity.update();
             e.entity.display(&mut canvas);
+            if e.status == EnzymeStatus::Complex {
+                let rand_num = rand::thread_rng().gen_range(1..=100);
+                if rand_num == 100 {
+                    e.release_product(&texture_creator, &mut products);
+                }
+            }
         }
-        for i in (0..subsrate.len()).rev() {
-            subsrate[i].entity.update();
-            subsrate[i].entity.display(&mut canvas);
+        for i in (0..substrate.len()).rev() {
+            substrate[i].entity.update();
+            substrate[i].entity.display(&mut canvas);
             let mut to_remove: Vec<usize> = Vec::new();
             for j in 0..enzymes.len() {
-                if !(enzymes[j].status == EnzymeStatus::Natural) ||
-                   enzymes[j].enzyme_type != subsrate[i].substrate_type {continue;}
-
-                let sq_min_distance = (subsrate[i].entity.radius + enzymes[j].entity.radius).powi(2);
-                let sq_distance = (subsrate[i].entity.position.0 - enzymes[j].entity.position.0).powi(2) + (subsrate[i].entity.position.1 - enzymes[j].entity.position.1).powi(2);
+                let sq_min_distance = (substrate[i].entity.radius + enzymes[j].entity.radius).powi(2);
+                let sq_distance = (substrate[i].entity.position.0 - enzymes[j].entity.position.0).powi(2) + (substrate[i].entity.position.1 - enzymes[j].entity.position.1).powi(2);
                 if sq_distance <= sq_min_distance {
-                    enzymes[j].grab_substrate(&texture_creator);
-                    to_remove.push(i);
+                    if enzymes[j].status != EnzymeStatus::Natural ||
+                    enzymes[j].enzyme_type != substrate[i].substrate_type {
+                        substrate[i].entity.velocity.0 *= -1.0;
+                        substrate[i].entity.velocity.1 *= -1.0;
+                        let r = sq_distance.sqrt();
+                        let delta = substrate[i].entity.radius + enzymes[j].entity.radius - r;
+                        substrate[i].entity.position.0 += (substrate[i].entity.position.0 - enzymes[j].entity.position.0) / r * delta * 2.0;
+                        substrate[i].entity.position.1 += (substrate[i].entity.position.1 - enzymes[j].entity.position.1) / r * delta * 2.0;
+                    } else {
+                        enzymes[j].grab_substrate(&texture_creator);
+                        to_remove.push(i);
                     break;
+                    }
                 }
             }
             for index in to_remove {
-                subsrate.remove(index);
+                substrate.remove(index);
             }
-            subsrate.shrink_to_fit();
+            substrate.shrink_to_fit();
+        }
+
+        // update all product position and remove any products that are outside of bounds
+        {
+            let mut to_remove: Vec<usize> = Vec::new();
+            for i in (0..products.len()).rev() {
+                products[i].position.0 += products[i].velocity.0;
+                products[i].position.1 += products[i].velocity.1;
+                products[i].display(&mut canvas);
+                if products[i].position.1 <= 0.0 || products[i].position.0 >= WIDTH as f64 || products[i].position.1 <= 0.0
+                || products[i].position.1 >= HEIGHT as f64 {to_remove.push(i)}
+            }
+            for index in to_remove {
+                products.remove(index);
+            }
+            products.shrink_to_fit();
         }
 
         canvas.set_draw_color(sdl2::pixels::Color::RGB(128, 0, 0));
@@ -126,11 +169,11 @@ fn main() {
                         }
                         else if add_substrate_a_button.contains_point(cursor) {
                             let new_substrate = Substrate::new(Type::A, &texture_creator);
-                            subsrate.push(new_substrate);
+                            substrate.push(new_substrate);
                         }
                         else if add_substrate_b_button.contains_point(cursor) {
                             let new_substrate = Substrate::new(Type::B, &texture_creator);
-                            subsrate.push(new_substrate);
+                            substrate.push(new_substrate);
                         }
                     }
                 }
@@ -282,8 +325,50 @@ impl<'a> Enzyme<'a> {
 
         self.entity.sprite = sprite;
     }
-    fn release_product(&mut self) {
-        todo!();
+    fn release_product(&mut self, texture_creator: &'a sdl2::render::TextureCreator<WindowContext>, products: &mut  Vec<Entity<'a>>) {
+        // change the enzyme sprite back to normal
+        self.status = EnzymeStatus::Natural;
+        let mut photo_path: &str;
+        match self.enzyme_type {
+            Type::A => {photo_path = ENZYME_A_BMP_PATH}
+            Type::B => {photo_path = ENZYME_B_BMP_PATH}
+        }
+        let mut sprite: sdl2::render::Texture<'_> = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+        self.entity.sprite = sprite;
+
+        // load the sprite for the new product
+        match self.enzyme_type {
+            Type::A => {photo_path = PRODUCT_A_PATH}
+            Type::B => {photo_path = PRODUCT_B_PATH}
+        }
+        
+        // calculate new velocity
+        let v1 = (
+            (self.entity.velocity.0 * PRODUCT_SPREAD.cos() - self.entity.velocity.1 * PRODUCT_SPREAD.sin()) * 2.0,
+            (self.entity.velocity.0 * PRODUCT_SPREAD.sin() + self.entity.velocity.1 * PRODUCT_SPREAD.cos()) * 2.0,
+        );
+        let v2 = (
+            (self.entity.velocity.0 * (-1.0 * PRODUCT_SPREAD).cos() - self.entity.velocity.1 * (-1.0 * PRODUCT_SPREAD).sin()) * 2.0,
+            (self.entity.velocity.0 * (-1.0 * PRODUCT_SPREAD).sin() + self.entity.velocity.1 * (-1.0 * PRODUCT_SPREAD).cos()) * 2.0,
+        );
+
+        sprite = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+        
+        let product1: Entity<'_> = Entity::new(sprite, SUBSTRATE_RADIUS, self.entity.position, v1);
+
+        sprite = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+
+        let product2: Entity<'_> = Entity::new(sprite, SUBSTRATE_RADIUS, self.entity.position, v2);
+
+        products.push(product1);
+        products.push(product2);
+
     }
 }
 
@@ -307,6 +392,6 @@ impl<'a> Substrate<'a> {
             .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
             .expect("Failed to create texture.");
 
-        Substrate {entity: Entity::spawn(sprite, SUBSTRATE_RADIUS, 1.0), substrate_type}
+        Substrate {entity: Entity::spawn(sprite, SUBSTRATE_RADIUS, 1.5), substrate_type}
     }
 }
