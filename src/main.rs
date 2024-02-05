@@ -1,19 +1,3 @@
-/* TODO
-!=use!=f64!=
-*!=add!=enzyme!=class!=
-*!=add!=random!=spawn!=conditions!=
-*!=add!=colision!=physics!=
-*!=add!=substrate!=
-*!=add!=ability!=for!=substrate!=to!=turn!=into!=product!=through!=enzyme!=
-*!=competetive!=inhibitors!=
-*!=non!=competetive!=inhibitors!=
-*!=use!=constant!=radius!=
-* add temp
-* add pH
-* add buffers
-*/
-
-
 extern crate sdl2;
 extern crate rand;
 
