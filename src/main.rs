@@ -43,6 +43,8 @@ const ENZYME_A_COMP_BMP_PATH: &str = "images/A/enzymeA_comp.bmp";
 const ENZYME_B_COMP_BMP_PATH: &str = "images/B/enzymeB_comp.bmp";
 const ENZYME_A_NONCOMP_BMP_PATH: &str = "images/A/enzymeA_noncomp.bmp";
 const ENZYME_B_NONCOMP_BMP_PATH: &str = "images/B/enzymeB_noncomp.bmp";
+const ENZYME_A_DENATURED_BMP_PATH: &str = "images/A/enzymeA_denatured.bmp";
+const ENZYME_B_DENATURED_BMP_PATH: &str = "images/B/enzymeB_denatured.bmp";
 
 const ADD_ENZYME_A_BUTTON_BMP_PATH: &str = "images/buttons/A/enzyme.bmp";
 const ADD_SUBSTRATE_A_BUTTON_BMP_PATH: &str = "images/buttons/A/substrate.bmp";
@@ -53,7 +55,8 @@ const ADD_ENZYME_B_BUTTON_BMP_PATH: &str = "images/buttons/B/enzyme.bmp";
 const ADD_SUBSTRATE_B_BUTTON_BMP_PATH: &str = "images/buttons/B/substrate.bmp";
 const ADD_COMP_INHIBITOR_B_BUTTON_BMP_PATH: &str = "images/buttons/B/comp_inhibitor.bmp";
 const ADD_NONCOMP_INHIBITOR_B_BUTTON_BMP_PATH: &str = "images/buttons/B/noncomp_inhibitor.bmp";
-
+const INCREASE_TEMP_BMP_PATH: &str = "images/buttons/increase_temp.bmp";
+const DECREASE_TEMP_BMP_PATH: &str = "images/buttons/decrease_temp.bmp";
 
 const PRODUCT_SPREAD: f64 = std::f64::consts::PI / 8.0;
 
@@ -65,7 +68,7 @@ const BUTTON_WIDTH: u32 = 200;
 const BUTTON_HEIGHT: u32 = 70;
 const BUTTON_PADDING: u32 = 15;
 
-
+const IDEAL_TEMP: f64 = 98.6;
 
 fn main() {
     // initalize sdl and canvas
@@ -137,10 +140,43 @@ fn main() {
         .create_texture_from_surface(sdl2::surface::Surface::load_bmp(ADD_NONCOMP_INHIBITOR_B_BUTTON_BMP_PATH).unwrap())
         .expect("Failed to create texture.");
 
+
+    let increase_tempurature_button = sdl2::rect::Rect::new(BUTTON_PADDING as i32,
+        (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 1 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
+    let increase_tempurature_button_sprite: sdl2::render::Texture<'_> = texture_creator
+        .create_texture_from_surface(sdl2::surface::Surface::load_bmp(INCREASE_TEMP_BMP_PATH).unwrap())
+        .expect("Failed to create texture.");
+
+    let decrease_tempurature_button = sdl2::rect::Rect::new(BUTTON_PADDING as i32,
+        (BUTTON_PADDING + BUTTON_HEIGHT) as i32 * 2 - BUTTON_HEIGHT as i32, BUTTON_WIDTH, BUTTON_HEIGHT);
+    let decrease_tempurature_button_sprite: sdl2::render::Texture<'_> = texture_creator
+        .create_texture_from_surface(sdl2::surface::Surface::load_bmp(DECREASE_TEMP_BMP_PATH).unwrap())
+        .expect("Failed to create texture.");
+    
+    //set temp and pH
+    let mut temp = IDEAL_TEMP;
     // set background color
-    canvas.set_draw_color(sdl2::pixels::Color::RGB(20, 20, 20));
     'game_loop: loop {
+        if temp == IDEAL_TEMP {
+            canvas.set_draw_color(sdl2::pixels::Color::RGB(20, 20, 20));
+        } else if temp > IDEAL_TEMP {
+            canvas.set_draw_color(sdl2::pixels::Color::RGB(20 + std::cmp::min(255 - 20, (temp - IDEAL_TEMP).powi(2) as u8), 20, 20));
+        } else {
+            canvas.set_draw_color(sdl2::pixels::Color::RGB(20, 20, 20 + std::cmp::min(255 - 20, (IDEAL_TEMP - temp).powi(2) as u8)));
+        }
         canvas.clear();
+
+        // check to see if enzymes should be denatued
+        {
+            let denature = (IDEAL_TEMP - temp).abs() >= 5.0;
+            for enzyme in &mut enzymes {
+                if enzyme.status == EnzymeStatus::Natural && denature {
+                    enzyme.to_denatured(&texture_creator);
+                } else if enzyme.status == EnzymeStatus::Denatured && !denature {
+                    enzyme.to_natural(&texture_creator);
+                }
+            }
+        }
         
         // check for collisions amount the enzymes and handle them
         for i in 0..enzymes.len() {
@@ -275,6 +311,8 @@ fn main() {
         canvas.copy(&add_comp_b_button_sprite, None,add_comp_b_button).unwrap();
         canvas.copy(&add_noncomp_a_button_sprite, None,add_noncomp_a_button).unwrap();
         canvas.copy(&add_noncomp_b_button_sprite, None,add_noncomp_b_button).unwrap();
+        canvas.copy(&increase_tempurature_button_sprite, None, increase_tempurature_button).unwrap();
+        canvas.copy(&decrease_tempurature_button_sprite, None, decrease_tempurature_button).unwrap();
 
         canvas.present();  // reveal the screen
 
@@ -324,6 +362,8 @@ fn main() {
                             let new_inhibitor = Inhibitor::new(Kind::B, InhibitorType::NonCompetetive, &texture_creator);
                             inhibitors.push(new_inhibitor);
                         }
+                        else if increase_tempurature_button.contains_point(cursor) {temp += 1.0;}
+                        else if decrease_tempurature_button.contains_point(cursor) {temp -= 1.0;}
                     }
                 }
                 _ => {}
@@ -574,6 +614,28 @@ impl<'a> Enzyme<'a> {
             .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
             .expect("Failed to create texture.");
         self.entity.sprite = sprite;
+    }
+    fn to_natural(&mut self, texture_creator: &'a sdl2::render::TextureCreator<WindowContext>) {
+        let photo_path = match self.kind {
+            Kind::A => ENZYME_A_BMP_PATH,
+            Kind::B => ENZYME_B_BMP_PATH,
+        };
+        let sprite: sdl2::render::Texture<'_> = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+        self.entity.sprite = sprite;
+        self.status = EnzymeStatus::Natural;
+    }
+    fn to_denatured(&mut self, texture_creator: &'a sdl2::render::TextureCreator<WindowContext>) {
+        let photo_path = match self.kind {
+            Kind::A => ENZYME_A_DENATURED_BMP_PATH,
+            Kind::B => ENZYME_B_DENATURED_BMP_PATH,
+        };
+        let sprite: sdl2::render::Texture<'_> = texture_creator
+            .create_texture_from_surface(sdl2::surface::Surface::load_bmp(photo_path).unwrap())
+            .expect("Failed to create texture.");
+        self.entity.sprite = sprite;
+        self.status = EnzymeStatus::Denatured;
     }
 }
 
